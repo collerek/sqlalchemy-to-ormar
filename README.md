@@ -1,3 +1,20 @@
+<p>
+<a href="https://pypi.org/project/sqlalchemy-to-ormar">
+    <img src="https://img.shields.io/pypi/v/sqlalchemy-to-ormar.svg" alt="Pypi version">
+</a>
+<a href="https://pypi.org/project/sqlalchemy-to-ormar">
+    <img src="https://img.shields.io/pypi/pyversions/sqlalchemy-to-ormar.svg" alt="Pypi version">
+</a>
+<img src="https://github.com/collerek/sqlalchemy-to-ormar/workflows/build/badge.svg" alt="Build Status">
+<a href="https://codeclimate.com/github/collerek/sqlalchemy-to-ormar/maintainability"><img src="https://api.codeclimate.com/v1/badges/e3ce9277f8373d22afb9/maintainability" /></a>
+<a href="https://codecov.io/gh/collerek/sqlalchemy-to-ormar">
+  <img src="https://codecov.io/gh/collerek/sqlalchemy-to-ormar/branch/main/graph/badge.svg?token=1FPH7A4Z8P"/>
+</a>
+<a href="https://codeclimate.com/github/collerek/sqlalchemy-to-ormar/test_coverage"><img src="https://api.codeclimate.com/v1/badges/e3ce9277f8373d22afb9/test_coverage" /></a>
+<a href="https://pepy.tech/project/sqlalchemy-to-ormar">
+<img src="https://pepy.tech/badge/sqlalchemy-to-ormar"></a>
+</p>
+
 # sqlalchemy-to-ormar
 
 A simple auto-translator from `sqlalchemy` ORM models to `ormar` models.

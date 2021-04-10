@@ -14,6 +14,7 @@ def get_version(package):
     """
     Return package version as listed in `__version__` in `init.py`.
     """
+    package = package.replace("-", "_")
     with open(os.path.join(package, "__init__.py")) as f:
         return re.search("__version__ = ['\"]([^'\"]+)['\"]", f.read()).group(1)
 
@@ -30,6 +31,7 @@ def get_packages(package):
     """
     Return root package and all sub-packages.
     """
+    package = package.replace("-", "_")
     return [
         dirpath
         for dirpath, dirnames, filenames in os.walk(package)

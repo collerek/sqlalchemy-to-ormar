@@ -1,4 +1,5 @@
 ormar
+aiosqlite
 sqlalchemy<=1.3.23
 sqlalchemy-stubs
 databases

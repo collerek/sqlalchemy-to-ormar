@@ -1,0 +1,43 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: build
+
+on:
+  push:
+    branches-ignore:
+      - 'gh-pages'
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  tests:
+    name: "Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'collerek/sqlalchemy-to-ormar'
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8, 3.9]
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Run sqlite
+      env:
+        DATABASE_URL: "sqlite:///testsuite"
+      run: PYTHONPATH=. pytest --ignore venv --cov=sqlalchemy_to_ormar --cov=tests --cov-report=xml --cov-fail-under=100 --cov-report=term-missing
+    - run: mypy --config-file mypy.ini sqlalchemy_to_ormar tests
+    - name: Upload coverage
+      uses: codecov/codecov-action@v1
+    - name: Test & publish code coverage
+      uses: paambaati/codeclimate-action@v2.7.5
+      env:
+        CC_TEST_REPORTER_ID:  ${{ secrets.CC_COVERAGE_TOKEN }}

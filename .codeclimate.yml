@@ -1,0 +1,23 @@
+version: "2"
+checks:
+  method-complexity:
+    config:
+      threshold: 8
+  argument-count:
+    config:
+      threshold: 6
+  method-count:
+    config:
+      threshold: 25
+  method-length:
+    config:
+      threshold: 35
+  file-lines:
+    config:
+      threshold: 500
+engines:
+  bandit:
+    enabled: true
+    checks:
+      assert_used:
+        enabled: false

@@ -1,44 +1,18 @@
-from typing import Container, Type, cast
+from typing import Container, Dict, Type, cast
 
 import ormar
 import sqlalchemy
 from databases import Database
-from pydantic.typing import ForwardRef
-from sqlalchemy import MetaData
+from ormar import ForeignKeyField, Model
+from sqlalchemy import MetaData, Table
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm.properties import ColumnProperty
+from sqlalchemy.orm import Mapper
 
-FIELD_MAP = {
-    "integer": ormar.Integer,
-    "small_integer": ormar.Integer,
-    "big_integer": ormar.BigInteger,
-    "string": ormar.String,
-    "text": ormar.Text,
-    "float": ormar.Float,
-    "decimal": ormar.Decimal,
-    "date": ormar.Date,
-    "datetime": ormar.DateTime,
-    "time": ormar.Time,
-    "boolean": ormar.Boolean,
-}
-
-TYPE_SPECIFIC_PARAMETERS = {
-    "string": {"max_length": {"key": "length", "default": 255}},
-    "decimal": {
-        "max_digits": {"key": "precision", "default": 18},
-        "decimal_places": {"key": "scale", "default": 6},
-    },
-}
-
-COMMON_PARAMETERS = dict(
-    name={"key": "name", "default": None},
-    primary_key={"key": "primary_key", "default": False},
-    autoincrement={"key": "autoincrement", "default": False},
-    index={"key": "index", "default": False},
-    unique={"key": "unique", "default": False},
-    nullable={"key": "nullable", "default": None},
-    default={"key": "default", "default": None},
-    server_default={"key": "server_default", "default": None},
+from sqlalchemy_to_ormar.maps import (
+    COMMON_PARAMETERS,
+    FIELD_MAP,
+    PARSED_MODELS,
+    TYPE_SPECIFIC_PARAMETERS,
 )
 
 
@@ -48,23 +22,45 @@ def sqlalchemy_to_ormar(
     metadata: MetaData,
     database: Database,
     exclude: Container[str] = None,
-) -> Type[ormar.Model]:
+    reverse: bool = False,
+) -> Type[Model]:
+    if db_model in PARSED_MODELS:
+        return PARSED_MODELS[db_model]
+
     exclude = exclude or []
     mapper = inspect(db_model)
     table = mapper.tables[0]
-    fields = {}
-    # columns
-    for c in table.columns:
-        if c.key in exclude or c.foreign_keys:
+    fields: Dict[str, Dict] = {}
+    fields = _extract_db_columns(table=table, exclude=exclude, fields=fields)
+    fields = _extract_relations(
+        mapper=mapper,
+        fields=fields,
+        reverse=reverse,
+        metadata=metadata,
+        database=database,
+    )
+    Meta = _build_model_meta(table=table, metadata=metadata, database=database)
+
+    ready_fields = {
+        k: v.get("type")(**{z: x for z, x in v.items() if z != "type"})  # type: ignore
+        for k, v in fields.items()
+    }
+    model = type(f"{db_model.__name__}", (ormar.Model,), {"Meta": Meta, **ready_fields})
+    model = cast(Type[Model], model)
+    PARSED_MODELS[db_model] = model
+    return model
+
+
+def _extract_db_columns(table: Table, exclude: Container[str], fields: Dict) -> Dict:
+    for column in table.columns:
+        if column.key in exclude or column.foreign_keys:
             continue
         field_definition = dict()
-        field_type = c.type.__visit_name__.lower()
+        field_type = column.type.__visit_name__.lower()  # type: ignore
         for param, field_def in COMMON_PARAMETERS.items():
             field_definition[param] = getattr(
-                c, field_def.get("key"), None
+                column, field_def.get("key", ""), None
             ) or field_def.get("default")
-            if param == "autoincrement" and field_definition[param] == "auto":
-                field_definition[param] = True
             field_definition["type"] = FIELD_MAP.get(field_type)
         if field_definition.get("primary_key") and field_type in [
             "integer",
@@ -72,38 +68,83 @@ def sqlalchemy_to_ormar(
             "big_integer",
         ]:
             field_definition["autoincrement"] = True
+        else:
+            field_definition["autoincrement"] = False
         type_params = TYPE_SPECIFIC_PARAMETERS.get(field_type, None)
         if type_params:
             for param, field_def in type_params.items():
-                param_val = getattr(c, field_def.get("key"), None) or field_def.get(
-                    "default"
-                )
+                param_val = getattr(
+                    column.type, field_def.get("key", ""), None
+                ) or field_def.get("default")
                 field_definition[param] = param_val
-        fields[c.key] = field_definition
+        fields[column.key] = field_definition
+    return fields
 
-    # fks
-    for attr in mapper.attrs:
+
+def _extract_relations(
+    mapper: Mapper, fields: Dict, reverse: bool, metadata: MetaData, database: Database
+) -> Dict:
+    for attr in mapper.attrs:  # type: ignore
         if isinstance(attr, sqlalchemy.orm.RelationshipProperty):
             # skip one to many, it will be populated later by ormar
-            if attr.direction.name == "ONETOMANY":
-                continue
-            elif attr.direction.name == "MANYTOONE":
+            # if attr.direction.name == "ONETOMANY":
+            #     continue
+            if attr.direction.name == "MANYTOONE":
                 # we use forward ref as target might not be populated
-                target = ForwardRef(f"Ormar{attr.entity.class_.__name__}")
+                traget_sqlalchemy = attr.entity.class_
+                if traget_sqlalchemy not in PARSED_MODELS:
+                    PARSED_MODELS[traget_sqlalchemy] = sqlalchemy_to_ormar(
+                        traget_sqlalchemy, metadata=metadata, database=database
+                    )
+                target = PARSED_MODELS[traget_sqlalchemy]
                 column = next(iter(attr.local_columns))
+                sql_fk = next(iter(column.foreign_keys))
                 fields[attr.key] = dict(
                     type=ormar.ForeignKey,
                     to=target,
                     name=column.key,
                     related_name=attr.back_populates,
-                    onupdate=getattr(column, "onupdate", None),
-                    ondelete=getattr(column, "ondelete", None),
+                    onupdate=getattr(sql_fk, "onupdate", None),
+                    ondelete=getattr(sql_fk, "ondelete", None),
                 )
+            elif attr.direction.name == "MANYTOMANY":
+                traget_sqlalchemy = attr.entity.class_
+                if traget_sqlalchemy not in PARSED_MODELS and not reverse:
+                    PARSED_MODELS[traget_sqlalchemy] = sqlalchemy_to_ormar(
+                        traget_sqlalchemy,
+                        metadata=metadata,
+                        database=database,
+                        reverse=True,
+                    )
+                else:  # pragma: no cover
+                    # target model already should have m2m relation
+                    continue
+                target = PARSED_MODELS[traget_sqlalchemy]
+                through_table_name = attr.secondary.key
+                fields[attr.key] = dict(
+                    type=ormar.ManyToMany,
+                    to=target,
+                    through=create_through_model(
+                        class_name=through_table_name.title(),
+                        table_name=through_table_name,
+                        metadata=metadata,
+                        database=database,
+                    ),
+                    related_name=attr.back_populates,
+                )
+    return fields
+
+
+def _build_model_meta(
+    table: Table, metadata: MetaData, database: Database
+) -> Type[ormar.ModelMeta]:
     # constraints
     constraints = []
     for const in table.constraints:
         if isinstance(const, sqlalchemy.UniqueConstraint):
-            constraints.append(ormar.UniqueColumns(*const._pending_colargs))
+            constraints.append(
+                ormar.UniqueColumns(*const._pending_colargs)  # type: ignore
+            )
 
     Meta = type(
         "Meta",
@@ -115,16 +156,26 @@ def sqlalchemy_to_ormar(
             "constraints": constraints,
         },
     )
+    return cast(Type[ormar.ModelMeta], Meta)
 
-    ready_fields = {
-        k: v.get("type")(**{z: x for z, x in v.items() if z != "type"})
-        for k, v in fields.items()
+
+def create_through_model(
+    class_name: str,
+    table_name: str,
+    metadata: MetaData,
+    database: Database,
+) -> Type[Model]:
+    """
+    Creates default empty through model if no additional fields are required.
+    """
+    new_meta_namespace = {
+        "tablename": table_name,
+        "database": database,
+        "metadata": metadata,
     }
-    model = type(
-        f"Ormar{db_model.__name__}", (ormar.Model,), {"Meta": Meta, **ready_fields}
-    )
-    model = cast(Type[ormar.Model], model)
-    return model
+    new_meta = type("Meta", (), new_meta_namespace)
+    through_model = type(class_name, (ormar.Model,), {"Meta": new_meta})
+    return cast(Type["Model"], through_model)
 
 
 def ormar_model_str_repr(
@@ -140,9 +191,19 @@ def ormar_model_str_repr(
         f'{pad * 2}tablename="{model.Meta.tablename}"\n'
     )
     if model.Meta.constraints:
-        definition += f"{pad}{pad}constraints={model.Meta.constraints}\n"
+        constraints = []
+        for const in model.Meta.constraints:
+            if isinstance(const, ormar.UniqueColumns):
+                args = ", ".join(
+                    [f'"{x}"' for x in const._pending_colargs]  # type: ignore
+                )
+                constraints.append(f"ormar.UniqueColumns({args})")
+
+        definition += f"{pad}{pad}constraints=[{', '.join(constraints)}]\n"
     definition += "\n"
     for field in model.Meta.model_fields.values():
+        if field.is_relation and field.virtual:
+            continue
         field_definition = dict()
         field_type = field.__class__.__name__
         field_name = field.name
@@ -151,7 +212,7 @@ def ormar_model_str_repr(
             param_name = remap_params.get(param, param)
             if getattr(field, param_name, None) != field_def.get("default"):
                 field_definition[param] = getattr(field, param_name, None)
-        if skip_names_if_match and field_definition["name"] == field_name:
+        if skip_names_if_match and field_definition.get("name") == field_name:
             field_definition.pop("name", None)
         if field_definition.get("primary_key"):
             field_definition.pop("nullable", None)
@@ -163,11 +224,23 @@ def ormar_model_str_repr(
         params = ["=".join([str(k), str(v)]) for k, v in field_definition.items()]
         params_str = ", ".join(sorted(params))
         if field_type == "ForeignKey":
-            rel_params = f'to={field.to}, related_name="{field.related_name}", '
+            field = cast(ForeignKeyField, field)
+            rel_params = (
+                f"to={field.to.get_name(lower=False)}, "
+                f'related_name="{field.related_name}", '
+            )
             if field.onupdate:
-                rel_params += f'onupdate="{field.onupdate}"'
+                rel_params += f'onupdate="{field.onupdate}", '
             if field.ondelete:
-                rel_params += f'ondelete="{field.ondelete}"'
+                rel_params += f'ondelete="{field.ondelete}", '
+            params_str = rel_params + params_str
+        if field_type == "ManyToMany":
+            field = cast(ForeignKeyField, field)
+            rel_params = (
+                f"to={field.to.get_name(lower=False)}, "
+                f"through={field.through.get_name(lower=False)}, "
+                f'related_name="{field.related_name}", '
+            )
             params_str = rel_params + params_str
         definition += f"{pad}{field_name} = ormar.{field_type}({params_str})\n"
     return definition

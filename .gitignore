@@ -50,6 +50,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.mypy_cache/
 
 # Translations
 *.mo
@@ -83,6 +84,9 @@ ipython_config.py
 
 # pyenv
 .python-version
+
+# test databses
+*.db
 
 # pipenv
 #   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.

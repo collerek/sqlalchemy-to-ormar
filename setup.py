@@ -44,7 +44,7 @@ setup(
     version=get_version(PACKAGE),
     url=URL,
     license="MIT",
-    description="A simple auto-translator from `sqlalchemy` ORM models to `ormar` models.",
+    description="A simple auto-translator from sqlalchemy ORM models to ormar models.",
     long_description=get_long_description(),
     long_description_content_type="text/markdown",
     keywords=["orm", "sqlalchemy", "ormar", "databases", "async", "alembic"],

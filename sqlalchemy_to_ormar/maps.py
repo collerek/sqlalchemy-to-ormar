@@ -5,19 +5,30 @@ from ormar import Model
 
 FIELD_MAP = {
     "integer": ormar.Integer,
+    "tinyint": ormar.Integer,
+    "smallint": ormar.Integer,
+    "bigint": ormar.Integer,
     "small_integer": ormar.Integer,
     "big_integer": ormar.BigInteger,
     "string": ormar.String,
+    "char": ormar.String,
+    "varchar": ormar.String,
     "text": ormar.Text,
+    "mediumtext": ormar.Text,
+    "longtext": ormar.Text,
     "float": ormar.Float,
     "decimal": ormar.Decimal,
     "date": ormar.Date,
     "datetime": ormar.DateTime,
+    "timestamp": ormar.DateTime,
     "time": ormar.Time,
     "boolean": ormar.Boolean,
+    "bit": ormar.Boolean,
 }
 TYPE_SPECIFIC_PARAMETERS: Dict[str, Dict] = {
     "string": {"max_length": {"key": "length", "default": 255}},
+    "varchar": {"max_length": {"key": "length", "default": 255}},
+    "char": {"max_length": {"key": "length", "default": 255}},
     "decimal": {
         "max_digits": {"key": "precision", "default": 18},
         "decimal_places": {"key": "scale", "default": 6},

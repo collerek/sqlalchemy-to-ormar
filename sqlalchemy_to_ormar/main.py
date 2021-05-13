@@ -4,12 +4,14 @@ import ormar
 import sqlalchemy
 from databases import Database
 from ormar import ForeignKeyField, Model
+from pydantic.typing import ForwardRef
 from sqlalchemy import MetaData, Table
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Mapper
 
 from sqlalchemy_to_ormar.maps import (
     COMMON_PARAMETERS,
+    CURRENTLY_PROCESSED,
     FIELD_MAP,
     PARSED_MODELS,
     TYPE_SPECIFIC_PARAMETERS,
@@ -27,6 +29,8 @@ def sqlalchemy_to_ormar(
     if db_model in PARSED_MODELS:
         return PARSED_MODELS[db_model]
 
+    CURRENTLY_PROCESSED.add(db_model)
+
     exclude = exclude or []
     mapper = inspect(db_model)
     table = mapper.tables[0]
@@ -38,6 +42,7 @@ def sqlalchemy_to_ormar(
         reverse=reverse,
         metadata=metadata,
         database=database,
+        db_model=db_model,
     )
     Meta = _build_model_meta(table=table, metadata=metadata, database=database)
 
@@ -47,8 +52,25 @@ def sqlalchemy_to_ormar(
     }
     model = type(f"{db_model.__name__}", (ormar.Model,), {"Meta": Meta, **ready_fields})
     model = cast(Type[Model], model)
+    print(f"adding model {model}")
     PARSED_MODELS[db_model] = model
+    CURRENTLY_PROCESSED.remove(db_model)
+    _update_refs_in_related(model)
     return model
+
+
+def _update_refs_in_related(model: Type[Model]):
+    fields_dict = list(model.Meta.model_fields.items())
+    for name, field in fields_dict:
+        if field.is_relation:
+            target = model.Meta.model_fields[name].to
+            if target.__class__ != ForwardRef:
+                target.update_forward_refs(
+                    **{k.__name__: v for k, v in PARSED_MODELS.items()}
+                )
+            else:
+                if target.__forward_arg__ == model.__name__:
+                    model.update_forward_refs(**{model.__name__: model})
 
 
 def _extract_db_columns(table: Table, exclude: Container[str], fields: Dict) -> Dict:
@@ -82,7 +104,12 @@ def _extract_db_columns(table: Table, exclude: Container[str], fields: Dict) -> 
 
 
 def _extract_relations(
-    mapper: Mapper, fields: Dict, reverse: bool, metadata: MetaData, database: Database
+    mapper: Mapper,
+    fields: Dict,
+    reverse: bool,
+    metadata: MetaData,
+    database: Database,
+    db_model: Type,
 ) -> Dict:
     for attr in mapper.attrs:  # type: ignore
         if isinstance(attr, sqlalchemy.orm.RelationshipProperty):
@@ -91,12 +118,19 @@ def _extract_relations(
             #     continue
             if attr.direction.name == "MANYTOONE":
                 # we use forward ref as target might not be populated
-                traget_sqlalchemy = attr.entity.class_
-                if traget_sqlalchemy not in PARSED_MODELS:
-                    PARSED_MODELS[traget_sqlalchemy] = sqlalchemy_to_ormar(
-                        traget_sqlalchemy, metadata=metadata, database=database
+                target_sqlalchemy = attr.entity.class_
+                if (
+                    target_sqlalchemy not in PARSED_MODELS
+                    and target_sqlalchemy not in CURRENTLY_PROCESSED
+                    and not target_sqlalchemy == db_model
+                ):
+                    PARSED_MODELS[target_sqlalchemy] = sqlalchemy_to_ormar(
+                        target_sqlalchemy, metadata=metadata, database=database
                     )
-                target = PARSED_MODELS[traget_sqlalchemy]
+                    target = PARSED_MODELS[target_sqlalchemy]
+                else:
+                    target = ForwardRef(target_sqlalchemy.__name__)
+
                 column = next(iter(attr.local_columns))
                 sql_fk = next(iter(column.foreign_keys))
                 fields[attr.key] = dict(
@@ -108,10 +142,10 @@ def _extract_relations(
                     ondelete=getattr(sql_fk, "ondelete", None),
                 )
             elif attr.direction.name == "MANYTOMANY":
-                traget_sqlalchemy = attr.entity.class_
-                if traget_sqlalchemy not in PARSED_MODELS and not reverse:
-                    PARSED_MODELS[traget_sqlalchemy] = sqlalchemy_to_ormar(
-                        traget_sqlalchemy,
+                target_sqlalchemy = attr.entity.class_
+                if target_sqlalchemy not in PARSED_MODELS and not reverse:
+                    PARSED_MODELS[target_sqlalchemy] = sqlalchemy_to_ormar(
+                        target_sqlalchemy,
                         metadata=metadata,
                         database=database,
                         reverse=True,
@@ -119,7 +153,7 @@ def _extract_relations(
                 else:  # pragma: no cover
                     # target model already should have m2m relation
                     continue
-                target = PARSED_MODELS[traget_sqlalchemy]
+                target = PARSED_MODELS[target_sqlalchemy]
                 through_table_name = attr.secondary.key
                 fields[attr.key] = dict(
                     type=ormar.ManyToMany,

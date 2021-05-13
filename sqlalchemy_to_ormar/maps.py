@@ -1,4 +1,4 @@
-from typing import Dict, Type
+from typing import Dict, Set, Type
 
 import ormar
 from ormar import Model
@@ -45,3 +45,4 @@ COMMON_PARAMETERS: Dict[str, Dict] = dict(
     server_default={"key": "server_default", "default": None},
 )
 PARSED_MODELS: Dict[Type, Type[Model]] = dict()
+CURRENTLY_PROCESSED: Set = set()

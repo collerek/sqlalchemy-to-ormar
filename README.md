@@ -146,7 +146,10 @@ Base.metadata.drop_all(engine)
 
 ## Automap support
 
-TBD -> translated from models auto-mapped by sqlalchemy
+You can use [`sqlacodegen`](https://github.com/agronholm/sqlacodegen) to generate sqlalchemy models out of existing database 
+and then use sqlalchemy-to-ormar to translate it to `ormar` models. 
+
+Note that sqlalchemy has it's own automap feature, but out of experience it does not work well with complicated databases.
 
 ## Supported fields
 

@@ -69,7 +69,7 @@ def _update_refs_in_related(model: Type[Model]):
                     **{k.__name__: v for k, v in PARSED_MODELS.items()}
                 )
             else:
-                if target.__forward_arg__ == model.__name__:
+                if target.__forward_arg__ == model.__name__:  # type: ignore
                     model.update_forward_refs(**{model.__name__: model})
 
 
@@ -129,7 +129,7 @@ def _extract_relations(
                     )
                     target = PARSED_MODELS[target_sqlalchemy]
                 else:
-                    target = ForwardRef(target_sqlalchemy.__name__)
+                    target = ForwardRef(target_sqlalchemy.__name__)  # type: ignore
 
                 column = next(iter(attr.local_columns))
                 sql_fk = next(iter(column.foreign_keys))

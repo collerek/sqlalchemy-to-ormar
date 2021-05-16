@@ -28,7 +28,7 @@ class User(Base):
     USERNAME = Column(String(255), index=True)
     PASSWORD = Column(String(40))
     EMAIL = Column(String(255))
-    CUSTOMER_ID = Column(ForeignKey("customer.CUSTOMER_ID"), index=True)
+    CUSTOMER_ID = Column(ForeignKey("customer.CUSTOMER_ID"), index=True)  # type: ignore
     user_customer = relationship(
         "Customer", primaryjoin="User.CUSTOMER_ID == Customer.CUSTOMER_ID"
     )
@@ -42,7 +42,7 @@ class Customer(Base):
     ORGNO = Column(String(20))
     TYPE = Column(Integer())
     STATUS = Column(Integer())
-    SELLER_ID = Column(ForeignKey("user.USER_ID"), index=True)
+    SELLER_ID = Column(ForeignKey("user.USER_ID"), index=True)  # type: ignore
     PHONE = Column(String(20))
     FAX = Column(String(20))
     seller = relationship("User", primaryjoin="Customer.SELLER_ID == User.USER_ID")

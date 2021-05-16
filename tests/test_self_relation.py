@@ -28,7 +28,7 @@ class User(Base):
     USERNAME = Column(String(255), index=True)
     PASSWORD = Column(String(40))
     EMAIL = Column(String(255))
-    PARENT_ID = Column(ForeignKey("user.USER_ID"), index=True)
+    PARENT_ID = Column(ForeignKey("user.USER_ID"), index=True)  # type: ignore
     parent = relationship("User", remote_side=[USER_ID])
 
 
